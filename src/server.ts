@@ -23,6 +23,44 @@ const validateUserInput = (data: { [key: string]: any }, requiredFields: string[
   return null;
 };
 
+// Main validation and sanitization function
+const validateAndSanitize = (
+  data: { [key: string]: any }, // Input data from user
+  requiredFields: { [field: string]: 'string' | 'number' | 'boolean' } // Expected fields and their types
+): { error: string | null; sanitizedData: { [key: string]: any } } => {
+  const sanitizedData: { [key: string]: any } = {}; // Object to hold sanitized values
+
+  // Iterate through each required field and its expected type
+  for (const [field, type] of Object.entries(requiredFields)) {
+    const value = data[field]; // Get the user input for the current field
+
+    // Check if the field is missing
+    if (value === undefined || value === null) {
+      return { error: `${field} is required`, sanitizedData: {} }; // Return an error if the field is missing
+    }
+
+    // Type validation for each field
+    if (type === 'string' && typeof value !== 'string') {
+      return { error: `${field} must be a string`, sanitizedData: {} }; // Check if the value is a string
+    }
+    if (type === 'number' && !Number.isFinite(value)) {
+      return { error: `${field} must be a valid number`, sanitizedData: {} }; // Check if the value is a valid finite number
+    }
+    if (type === 'boolean' && typeof value !== 'boolean') {
+      return { error: `${field} must be a boolean`, sanitizedData: {} }; // Check if the value is a boolean
+    }
+
+    // If the field type is a string, it can be further processed
+    if (type === 'string') {
+      sanitizedData[field] = sanitizeInput(value); // Assign the sanitized string value
+    } else {
+      sanitizedData[field] = value; // For number and boolean types, assign the value directly
+    }
+  }
+
+  return { error: null, sanitizedData }; // Return sanitized data with no errors
+};
+
 // Run a query and return a promise for handling asynchronous operations
 // Wrapping the db.run method in a promise allows for easy integration with async/await syntax
 const runQuery = async (query: string, params: any[] = []): Promise<any> => {
@@ -56,16 +94,21 @@ const fetchSingleQuery = async (query: string, params: any[] = []): Promise<any 
   });
 };
 
+// Helper function to sanitize input strings
+const sanitizeInput = (input: string): string => {
+  return input.trim(); // Trimming the input to remove leading and trailing whitespace
+};
+
 // Add/Create a User
 app.post('/users', async (req, res) => {
   try {
-    const { id, name } = req.body;
-
     // Validate user input before processing
-    const validationError = validateUserInput(req.body, ['id', 'name']);
-    if (validationError) {
-      return res.status(400).json({ error: validationError });
+    const validationResult = validateAndSanitize(req.body, { id: 'string', name: 'string' });
+    if (validationResult.error) {
+      return res.status(400).json({ error: validationResult.error });
     }
+
+    const { id, name } = validationResult.sanitizedData; // Use sanitized data
 
     // Insert user into the database
     await runQuery("INSERT INTO user (id, name) VALUES (?, ?)", [id, name]);
@@ -78,13 +121,13 @@ app.post('/users', async (req, res) => {
 // Create a Post
 app.post('/posts', async (req, res) => {
   try {
-    const { id, user_id, content } = req.body;
-
     // Validate input data before processing the creation of a post
-    const validationError = validateUserInput(req.body, ['id', 'user_id', 'content']);
-    if (validationError) {
-      return res.status(400).json({ error: validationError });
+    const validationResult = validateAndSanitize(req.body, { id: 'string', user_id: 'string', content: 'string' });
+    if (validationResult.error) {
+      return res.status(400).json({ error: validationResult.error });
     }
+
+    const { id, user_id, content } = validationResult.sanitizedData; // Use sanitized data
 
     // Check if the user exists before creating the post
     const userExists = await fetchSingleQuery("SELECT id FROM user WHERE id = ?", [user_id]);
@@ -107,14 +150,13 @@ app.post('/posts', async (req, res) => {
 // Create a Comment
 app.post('/comments', async (req, res) => {
   try {
-    const { id, post_id, user_id, content } = req.body;
-
     // Validate input data for creating a comment
-    const validationError = validateUserInput(req.body, ['id', 'post_id', 'user_id', 'content']);
-    if (validationError) {
-      return res.status(400).json({ error: validationError });
+    const validationResult = validateAndSanitize(req.body, { id: 'string', post_id: 'string', user_id: 'string', content: 'string' });
+    if (validationResult.error) {
+      return res.status(400).json({ error: validationResult.error });
     }
 
+    const { id, post_id, user_id, content } = validationResult.sanitizedData; // Use sanitized data
     const createdAt = new Date().toISOString();
 
     // Insert the comment into the database
